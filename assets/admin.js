@@ -1,0 +1,25 @@
+(()=>{
+ const $=id=>document.getElementById(id); let data={categories:[],sites:[]};
+ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const msg=(text,error=false)=>{ $('status').textContent=text; $('status').style.color=error?'#b54747':'#50716c'; };
+ async function api(action,opts={}){const r=await fetch('/.netlify/functions/api?action='+action,{cache:'no-store',...opts,headers:{'content-type':'application/json',...(opts.headers||{})}});let d={};try{d=await r.json()}catch{}if(!r.ok)throw new Error(d.error||('请求失败 '+r.status));return d;}
+ function showAdmin(){ $('login-panel').classList.add('hidden');$('admin-panel').classList.remove('hidden');$('logout').classList.remove('hidden');render(); }
+ function render(){
+  $('categories').innerHTML=data.categories.length?data.categories.map((c,i)=>`<tr data-id="${esc(c.id)}"><td><input class="cat-name name-input" value="${esc(c.name)}" aria-label="分类名称"></td><td><input class="cat-sort" type="number" value="${Number(c.sort)||i+1}" aria-label="排序"></td><td><input class="cat-visible check" type="checkbox" ${c.visible!==false?'checked':''} aria-label="显示"></td><td><button class="delete-cat" type="button">删除</button></td></tr>`).join(''):'<tr><td colspan="4" class="table-empty">暂无分类</td></tr>';
+  const options=data.categories.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  $('sites').innerHTML=data.sites.length?data.sites.map((s,i)=>`<tr data-id="${esc(s.id)}"><td><input class="site-name name-input" value="${esc(s.name)}" aria-label="网站名称"></td><td><input class="site-url url-input" type="url" value="${esc(s.url)}" aria-label="网站网址"></td><td><select class="site-category" aria-label="所属分类">${options}</select></td><td><input class="site-sort" type="number" value="${Number(s.sort)||i+1}" aria-label="排序"></td><td><input class="site-visible check" type="checkbox" ${s.visible!==false?'checked':''} aria-label="显示"></td><td><button class="delete-site" type="button">删除</button></td></tr>`).join(''):'<tr><td colspan="6" class="table-empty">暂无网址</td></tr>';
+  [...$('sites').querySelectorAll('tr[data-id]')].forEach(row=>{const s=data.sites.find(x=>x.id===row.dataset.id);if(s)row.querySelector('.site-category').value=s.categoryId;});
+ }
+ function collect(){
+  data.categories=[...$('categories').querySelectorAll('tr[data-id]')].map((r,i)=>({id:r.dataset.id,name:r.querySelector('.cat-name').value.trim(),sort:Number(r.querySelector('.cat-sort').value)||i+1,visible:r.querySelector('.cat-visible').checked})).filter(c=>c.name);
+  data.sites=[...$('sites').querySelectorAll('tr[data-id]')].map((r,i)=>({id:r.dataset.id,name:r.querySelector('.site-name').value.trim(),url:r.querySelector('.site-url').value.trim(),categoryId:r.querySelector('.site-category').value,sort:Number(r.querySelector('.site-sort').value)||i+1,visible:r.querySelector('.site-visible').checked})).filter(s=>s.name&&s.url&&s.categoryId);
+ }
+ $('login-form').addEventListener('submit',async e=>{e.preventDefault();$('login-error').textContent='正在登录…';try{await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});const d=await api('admin');data=d;showAdmin();$('login-error').textContent='';}catch(err){$('login-error').textContent=err.message;}});
+ $('save').addEventListener('click',async()=>{try{collect();if(!data.categories.length)throw new Error('至少保留一个分类');for(const s of data.sites){if(!/^https?:\/\//i.test(s.url))throw new Error('网址必须以 http:// 或 https:// 开头：'+s.name);if(!data.categories.some(c=>c.id===s.categoryId))throw new Error('请为每个网址选择有效分类：'+s.name);}msg('正在保存…');const d=await api('save',{method:'POST',body:JSON.stringify(data)});data=await api('admin');render();msg(`保存成功：${d.categories} 个分类，${d.sites} 个网址。前台刷新后即可看到。`);}catch(e){msg(e.message,true);}});
+ $('add-category').addEventListener('click',()=>{collect();data.categories.push({id:crypto.randomUUID(),name:'新分类',sort:data.categories.length+1,visible:true});render();msg('新增分类尚未保存');});
+ $('add-site').addEventListener('click',()=>{collect();if(!data.categories.length){msg('请先添加一个分类',true);return;}data.sites.push({id:crypto.randomUUID(),name:'新网站',url:'https://example.com',categoryId:data.categories[0].id,sort:data.sites.length+1,visible:true});render();msg('新增网址尚未保存');});
+ $('categories').addEventListener('click',e=>{const b=e.target.closest('.delete-cat');if(!b)return;const row=b.closest('tr');const id=row.dataset.id;const used=data.sites.some(s=>s.categoryId===id);if(used&&!confirm('该分类下有网址。删除分类时，这些网址也会从导航数据中删除，确定继续？'))return;collect();data.categories=data.categories.filter(c=>c.id!==id);data.sites=data.sites.filter(s=>s.categoryId!==id);render();msg('删除操作尚未保存');});
+ $('sites').addEventListener('click',e=>{const b=e.target.closest('.delete-site');if(!b)return;collect();data.sites=data.sites.filter(s=>s.id!==b.closest('tr').dataset.id);render();msg('删除操作尚未保存');});
+ $('logout').addEventListener('click',async()=>{try{await api('logout',{method:'POST',body:'{}'});}catch{}location.reload();});
+ api('admin').then(d=>{data=d;showAdmin();}).catch(()=>{});
+})();
